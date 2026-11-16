@@ -109,6 +109,15 @@ interface GigabitEthernet1/0/10
 
 You should see `discovered spanning tree on VLAN …` within a few seconds. The first TC you see may be classified as "local link": your vNIC coming up triggers it. If nothing appears, capture on the same adapter with Wireshark using the filter `stp`. If Wireshark doesn't see BPDUs either, the problem is in the vSwitch, VLAN or switch-port configuration.
 
+## Download
+
+GitHub Actions builds the Windows exe on every push. It is packaged in a zip together with the example config and the Zabbix templates.
+
+* **Release builds:** pushing a `v*` tag (e.g. `v0.2.0`) publishes a GitHub Release with `stp-monitor-windows-x64.zip` attached.
+* **Other builds:** download the `stp-monitor-windows-x64` artifact from the workflow run.
+
+The machine that runs the exe still needs the [Npcap](https://npcap.com/#download) runtime (see below).
+
 ## Building on Windows
 
 1. Install Rust with [rustup](https://rustup.rs) (the default MSVC toolchain).

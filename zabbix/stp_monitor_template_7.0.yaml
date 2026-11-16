@@ -1,0 +1,547 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: c86236042343425cabe797c4f73843c8
+      name: Templates/Network devices
+  templates:
+    - uuid: 3ba5344cc92a45848db31bf2f3746f6d
+      template: 'STP Monitor'
+      name: 'STP Monitor'
+      description: 'Spanning tree data pushed by stp-monitor (Zabbix trapper). Link to the host named in stp-monitor.toml [zabbix] host. Works with Cisco Rapid-PVST+/PVST+ (per VLAN) and IEEE STP/RSTP/MSTP networks such as UniFi (native VLAN).'
+      vendor:
+        name: stp-monitor
+        version: '0.2'
+      groups:
+        - name: Templates/Network devices
+      items:
+        - uuid: a87f730b594f40b59a9800a4738a1a91
+          name: 'STP monitor: heartbeat'
+          type: TRAP
+          key: 'stp.monitor.heartbeat'
+          history: 7d
+          units: unixtime
+          description: 'Unix time of the last periodic report from stp-monitor.'
+          tags:
+            - tag: component
+              value: stp
+          triggers:
+            - uuid: 2550904ccd814ec0b0550c2aac7bcb26
+              expression: 'nodata(/STP Monitor/stp.monitor.heartbeat,{$STP.MONITOR.NODATA})=1'
+              name: 'STP monitor is not reporting'
+              priority: HIGH
+              description: 'No data received from stp-monitor. The service may be stopped or cannot reach Zabbix.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: d5d69e20f3274e5291870cdc3967bcd2
+          name: 'STP monitor: uptime'
+          type: TRAP
+          key: 'stp.monitor.uptime'
+          history: 7d
+          units: uptime
+          description: 'Seconds since stp-monitor started.'
+          tags:
+            - tag: component
+              value: stp
+        - uuid: ea69aae9a4c241d682b1610585f52d70
+          name: 'STP monitor: BPDUs received'
+          type: TRAP
+          key: 'stp.monitor.bpdu.total'
+          history: 30d
+          description: 'Total BPDUs received since start (all VLANs).'
+          tags:
+            - tag: component
+              value: stp
+        - uuid: 330dcf7cb2d440d681774632e6fbd79d
+          name: 'STP monitor: time since last BPDU'
+          type: TRAP
+          key: 'stp.monitor.bpdu.age'
+          history: 30d
+          units: s
+          description: 'Seconds since any BPDU was received on the trunk.'
+          tags:
+            - tag: component
+              value: stp
+          triggers:
+            - uuid: 2029d85024984f5b98b3b62d5f5b9fc9
+              expression: 'last(/STP Monitor/stp.monitor.bpdu.age)>{$STP.BPDU.TIMEOUT}'
+              name: 'No BPDUs received on the trunk port'
+              opdata: 'Last BPDU {ITEM.LASTVALUE1} ago'
+              priority: AVERAGE
+              description: 'No spanning tree BPDUs were seen on any VLAN. Check the trunk / vSwitch configuration and that spanning tree is enabled on the upstream switch port.'
+              dependencies:
+                - name: 'STP monitor is not reporting'
+                  expression: 'nodata(/STP Monitor/stp.monitor.heartbeat,{$STP.MONITOR.NODATA})=1'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 90d3359e485d4a8fba94aa0b2f79315a
+          name: 'STP monitor: VLANs seen'
+          type: TRAP
+          key: 'stp.monitor.vlans'
+          history: 30d
+          description: 'Number of VLANs (spanning tree instances) seen.'
+          tags:
+            - tag: component
+              value: stp
+      discovery_rules:
+        - uuid: 71b7a4f7bd2942f0a6c838c0357f5a5e
+          name: 'STP VLAN discovery'
+          type: TRAP
+          key: stp.vlan.discovery
+          lifetime: 7d
+          description: 'VLANs (spanning tree instances) seen on the trunk; sent by stp-monitor.'
+          item_prototypes:
+            - uuid: bb8713c30eba4cb5aa909560f50d1ad2
+              name: 'VLAN {#VLAN}: STP protocol'
+              type: TRAP
+              key: 'stp.protocol[{#VLAN}]'
+              history: 30d
+              trends: '0'
+              value_type: CHAR
+              description: 'Protocol and encapsulation of the BPDUs, e.g. "RSTP (IEEE)" (UniFi) or "RSTP (PVST+)" (Cisco).'
+              preprocessing:
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: a183bcd039924443a05481a8e96e10f6
+              name: 'VLAN {#VLAN}: Root bridge ID'
+              type: TRAP
+              key: 'stp.root.id[{#VLAN}]'
+              history: 30d
+              trends: '0'
+              value_type: CHAR
+              description: 'Root bridge ID as priority/sys-id-ext/MAC.'
+              preprocessing:
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+              trigger_prototypes:
+                - uuid: 868a9bae1af947488768e3fed405661f
+                  expression: 'change(/STP Monitor/stp.root.id[{#VLAN}])=1'
+                  name: 'VLAN {#VLAN}: STP root bridge changed'
+                  opdata: 'New root: {ITEM.LASTVALUE1}'
+                  priority: HIGH
+                  description: 'The root bridge of this spanning tree changed. This causes a reconvergence and flushes MAC tables. Close the problem manually once investigated.'
+                  recovery_mode: NONE
+                  manual_close: 'YES'
+                  tags:
+                    - tag: scope
+                      value: notice
+            - uuid: 6ef43919a6a74cc78c1b2902788a3385
+              name: 'VLAN {#VLAN}: Root bridge priority'
+              type: TRAP
+              key: 'stp.root.priority[{#VLAN}]'
+              history: 30d
+              description: 'Root bridge priority including the system ID extension.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: 0c4727baf5684b839e6b83df59474d0c
+              name: 'VLAN {#VLAN}: Root bridge MAC'
+              type: TRAP
+              key: 'stp.root.mac[{#VLAN}]'
+              history: 30d
+              trends: '0'
+              value_type: CHAR
+              description: 'Root bridge MAC address (lower case, colon separated).'
+              preprocessing:
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+              trigger_prototypes:
+                - uuid: a084816495ea4ea2aafdbdbf97e00c9f
+                  expression: 'find(/STP Monitor/stp.root.mac[{#VLAN}],,"regexp","{$STP.ROOT.MAC.MATCHES}")=0'
+                  name: 'VLAN {#VLAN}: STP root bridge is not the expected switch'
+                  opdata: 'Root: {ITEM.LASTVALUE1}'
+                  priority: AVERAGE
+                  description: 'The root bridge MAC does not match {$STP.ROOT.MAC.MATCHES}. With default priorities (common on UniFi) the switch with the lowest MAC becomes root, which may be an access switch or even an AP. Set a low bridge priority on the core switch.'
+                  tags:
+                    - tag: scope
+                      value: notice
+            - uuid: 231cbcb649a645f4bee11920581566c9
+              name: 'VLAN {#VLAN}: Root path cost'
+              type: TRAP
+              key: 'stp.root.cost[{#VLAN}]'
+              history: 30d
+              description: 'Root path cost advertised by the upstream switch.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+              trigger_prototypes:
+                - uuid: 057dea19694f45ff8876325b8d69690b
+                  expression: 'change(/STP Monitor/stp.root.cost[{#VLAN}])<>0'
+                  name: 'VLAN {#VLAN}: STP root path cost changed'
+                  opdata: 'Cost: {ITEM.LASTVALUE1}'
+                  priority: INFO
+                  description: 'The upstream switch now reaches the root over a different path (a link failed or recovered somewhere in the network).'
+                  recovery_mode: NONE
+                  manual_close: 'YES'
+                  tags:
+                    - tag: scope
+                      value: notice
+            - uuid: bec6a010f25543b689e728104763370f
+              name: 'VLAN {#VLAN}: Designated bridge ID'
+              type: TRAP
+              key: 'stp.bridge.id[{#VLAN}]'
+              history: 30d
+              trends: '0'
+              value_type: CHAR
+              description: 'Bridge ID of the switch sending the BPDUs (the switch at the other end of the trunk).'
+              preprocessing:
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: e1f4fce90f6e497ab263abfd645eae35
+              name: 'VLAN {#VLAN}: Designated port ID'
+              type: TRAP
+              key: 'stp.port.id[{#VLAN}]'
+              history: 30d
+              trends: '0'
+              value_type: CHAR
+              description: 'Port ID (priority.number) of the upstream switch port.'
+              preprocessing:
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: 6e93a0f058144b38b74c9ed70e121ffb
+              name: 'VLAN {#VLAN}: Designated port role'
+              type: TRAP
+              key: 'stp.port.role[{#VLAN}]'
+              history: 30d
+              trends: '0'
+              value_type: CHAR
+              description: 'Role of the upstream switch port (RSTP only).'
+              preprocessing:
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: bb9ff822642f4e979c17b096aff12259
+              name: 'VLAN {#VLAN}: Designated port state'
+              type: TRAP
+              key: 'stp.port.state[{#VLAN}]'
+              history: 30d
+              trends: '0'
+              value_type: CHAR
+              description: 'State of the upstream switch port (RSTP only).'
+              preprocessing:
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: 2ddc16f010964dc893c2fad56a85e2e2
+              name: 'VLAN {#VLAN}: Hello time'
+              type: TRAP
+              key: 'stp.timer.hello[{#VLAN}]'
+              history: 30d
+              value_type: FLOAT
+              units: s
+              description: 'Hello time advertised by the root.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: 5e9eaa53a7c4486fad828b88388df074
+              name: 'VLAN {#VLAN}: Max age'
+              type: TRAP
+              key: 'stp.timer.maxage[{#VLAN}]'
+              history: 30d
+              value_type: FLOAT
+              units: s
+              description: 'Max age advertised by the root. Also the maximum number of bridge hops.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: d84c526a0a134cce9b62f436f3ae471b
+              name: 'VLAN {#VLAN}: Forward delay'
+              type: TRAP
+              key: 'stp.timer.fwddelay[{#VLAN}]'
+              history: 30d
+              value_type: FLOAT
+              units: s
+              description: 'Forward delay advertised by the root.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: 42b4e0f827654f11a7d6614f2dacd4a1
+              name: 'VLAN {#VLAN}: Message age (hops to root)'
+              type: TRAP
+              key: 'stp.message.age[{#VLAN}]'
+              history: 30d
+              value_type: FLOAT
+              units: s
+              description: 'Message age of the last BPDU; incremented by one per bridge, so roughly the hop count to the root.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: dc3ee45013bd404b8948c223bac7e0ac
+              name: 'VLAN {#VLAN}: BPDUs received'
+              type: TRAP
+              key: 'stp.bpdu.count[{#VLAN}]'
+              history: 30d
+              description: 'BPDUs received for this VLAN since start.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: bd38d26ad1ff43dd9f73751b2a994587
+              name: 'VLAN {#VLAN}: Time since last BPDU'
+              type: TRAP
+              key: 'stp.bpdu.age[{#VLAN}]'
+              history: 30d
+              units: s
+              description: 'Seconds since a BPDU was received for this VLAN.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+              trigger_prototypes:
+                - uuid: 940ce72fbc2145b2844741f43b5a53aa
+                  expression: 'last(/STP Monitor/stp.bpdu.age[{#VLAN}])>{$STP.BPDU.TIMEOUT}'
+                  name: 'VLAN {#VLAN}: No BPDUs received'
+                  opdata: 'Last BPDU {ITEM.LASTVALUE1} ago'
+                  priority: AVERAGE
+                  description: 'BPDUs for this VLAN stopped arriving. The VLAN may have been removed from the trunk, or spanning tree disabled for it.'
+                  tags:
+                    - tag: scope
+                      value: availability
+            - uuid: ad9a0889abea48f8ba60cd1465cace5f
+              name: 'VLAN {#VLAN}: TCN BPDUs received'
+              type: TRAP
+              key: 'stp.tcn.count[{#VLAN}]'
+              history: 30d
+              description: 'Legacy 802.1D TCN BPDUs received since start.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: 69296053f892476e969aaabbf09a94d4
+              name: 'VLAN {#VLAN}: Root bridge changes'
+              type: TRAP
+              key: 'stp.root.changes[{#VLAN}]'
+              history: 30d
+              description: 'Root bridge changes seen since start.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: 0d29901857d449be8e34af0b2aeac7ff
+              name: 'VLAN {#VLAN}: Tree changes'
+              type: TRAP
+              key: 'stp.tree.changes[{#VLAN}]'
+              history: 30d
+              description: 'Changes in the advertised tree (root, root path cost, hops, designated bridge/port) since start.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: 1aaa500eb9eb43508e9c1da71e0bca96
+              name: 'VLAN {#VLAN}: Topology changes'
+              type: TRAP
+              key: 'stp.tc.count[{#VLAN}]'
+              history: 30d
+              description: 'Topology change events since start, excluding ones caused by the monitor''s own link.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: f108a767531e4e888a8d01b3719b4003
+              name: 'VLAN {#VLAN}: Topology changes (recent)'
+              type: TRAP
+              key: 'stp.tc.recent[{#VLAN}]'
+              history: 30d
+              description: 'Topology changes (significant + minor) within tc_window seconds (default 300).'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+              trigger_prototypes:
+                - uuid: 14281edf7be943e58350b9e005c77b41
+                  expression: 'last(/STP Monitor/stp.tc.recent[{#VLAN}])>={$STP.TC.STORM}'
+                  name: 'VLAN {#VLAN}: STP topology change storm'
+                  opdata: '{ITEM.LASTVALUE1} TC(s) in window'
+                  priority: HIGH
+                  description: 'Repeated topology changes: usually a flapping link, or a device repeatedly connecting on a port that is not an edge/portfast port. Tune with context macro {$STP.TC.STORM:"<vlan>"}.'
+                  tags:
+                    - tag: scope
+                      value: performance
+                - uuid: bf62735c6fd14a2f8d6b70b60b58a633
+                  expression: 'last(/STP Monitor/stp.tc.recent[{#VLAN}])>0 and {$STP.TC.ALERT.MINOR}=1'
+                  name: 'VLAN {#VLAN}: STP topology change (minor)'
+                  opdata: '{ITEM.LASTVALUE1} TC(s) in window'
+                  priority: INFO
+                  description: 'A topology change without any visible change in the tree, typically a client device connecting. Disabled unless {$STP.TC.ALERT.MINOR} is 1.'
+                  dependencies:
+                    - name: 'VLAN {#VLAN}: STP topology change storm'
+                      expression: 'last(/STP Monitor/stp.tc.recent[{#VLAN}])>={$STP.TC.STORM}'
+                    - name: 'VLAN {#VLAN}: STP topology change with path change'
+                      expression: 'last(/STP Monitor/stp.tc.significant.recent[{#VLAN}])>0'
+                  tags:
+                    - tag: scope
+                      value: notice
+            - uuid: 702dd343942e44ce9e40394aae65180c
+              name: 'VLAN {#VLAN}: Topology changes with path change (recent)'
+              type: TRAP
+              key: 'stp.tc.significant.recent[{#VLAN}]'
+              history: 30d
+              description: 'Significant topology changes within tc_window: the TC coincided with a change in root bridge, root path cost, hops to root or designated bridge/port.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+              trigger_prototypes:
+                - uuid: b291ef74d77c48bbab2bcc7eb98c5ce0
+                  expression: 'last(/STP Monitor/stp.tc.significant.recent[{#VLAN}])>0'
+                  name: 'VLAN {#VLAN}: STP topology change with path change'
+                  opdata: '{ITEM.LASTVALUE1} TC(s) in window'
+                  priority: WARNING
+                  description: 'The spanning tree changed shape: a link failed or recovered, or the root moved. See "Last topology change details" for what changed.'
+                  dependencies:
+                    - name: 'VLAN {#VLAN}: STP topology change storm'
+                      expression: 'last(/STP Monitor/stp.tc.recent[{#VLAN}])>={$STP.TC.STORM}'
+                  tags:
+                    - tag: scope
+                      value: notice
+            - uuid: 2b9e9e5811444173a017d716fab92578
+              name: 'VLAN {#VLAN}: Topology changes with path change'
+              type: TRAP
+              key: 'stp.tc.significant.count[{#VLAN}]'
+              history: 30d
+              description: 'Significant topology changes since start.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: f6210c8689254180ac929cfa6a671788
+              name: 'VLAN {#VLAN}: Topology changes from own link'
+              type: TRAP
+              key: 'stp.tc.local.count[{#VLAN}]'
+              history: 30d
+              description: 'TCs seen right after BPDUs (re)appeared on the trunk, attributed to the monitor''s own link. Not alerted.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: 1e668706ff5a47799b11f5f96169be1f
+              name: 'VLAN {#VLAN}: Last topology change time'
+              type: TRAP
+              key: 'stp.tc.last[{#VLAN}]'
+              history: 30d
+              units: unixtime
+              description: 'Time of the last topology change (0 = none since start).'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: efba29ca9b754b85a0998622b572e24d
+              name: 'VLAN {#VLAN}: Topology change in progress'
+              type: TRAP
+              key: 'stp.tc.active[{#VLAN}]'
+              history: 30d
+              description: '1 while TC indications are still arriving.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+            - uuid: d303898f025143f69d97a2ea30afbe24
+              name: 'VLAN {#VLAN}: Last topology change details'
+              type: TRAP
+              key: 'stp.tc.event[{#VLAN}]'
+              history: 90d
+              trends: '0'
+              value_type: TEXT
+              description: 'One value per TC event, prefixed [significant: ...], [minor: ...] or [local link: ...], with the sender bridge, port, root and flags.'
+              tags:
+                - tag: component
+                  value: stp
+                - tag: vlan
+                  value: '{#VLAN}'
+          trigger_prototypes:
+            - uuid: 6bc41843a1724d01bc1156f88c0b4f07
+              expression: 'last(/STP Monitor/stp.timer.maxage[{#VLAN}])-last(/STP Monitor/stp.message.age[{#VLAN}])<={$STP.HOPS.MARGIN}'
+              name: 'VLAN {#VLAN}: STP network diameter close to max age'
+              opdata: 'Hops: {ITEM.LASTVALUE2} / max age {ITEM.LASTVALUE1}'
+              priority: WARNING
+              description: 'BPDUs are discarded once message age reaches max age. Long daisy chains of switches (common with UniFi Flex/USW-Lite access switches) can hit this and cause loops or instability. Flatten the topology or raise max age on the root.'
+              tags:
+                - tag: scope
+                  value: capacity
+      tags:
+        - tag: class
+          value: network
+      macros:
+        - macro: '{$STP.BPDU.TIMEOUT}'
+          value: '60'
+          description: 'Seconds without BPDUs before alerting.'
+        - macro: '{$STP.MONITOR.NODATA}'
+          value: '3m'
+          description: 'How long stp-monitor may be silent before alerting.'
+        - macro: '{$STP.TC.STORM}'
+          value: '5'
+          description: 'Topology changes (significant + minor) within tc_window that count as a storm.'
+        - macro: '{$STP.TC.ALERT.MINOR}'
+          value: '0'
+          description: 'Set to 1 to also alert on minor TCs (no tree change, e.g. edge devices connecting).'
+        - macro: '{$STP.ROOT.MAC.MATCHES}'
+          value: '.*'
+          description: 'Regular expression the root bridge MAC must match, e.g. ^(00:11:22:33:44:55|00:11:22:33:44:66)$.'
+        - macro: '{$STP.HOPS.MARGIN}'
+          value: '3'
+          description: 'Alert when the hop count to the root is within this many of max age.'

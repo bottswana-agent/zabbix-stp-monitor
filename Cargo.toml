@@ -1,0 +1,20 @@
+[package]
+name = "stp-monitor"
+version = "0.1.0"
+edition = "2021"
+description = "Passive STP / RSTP / Rapid-PVST+ monitor that pushes BPDU data and topology-change alerts to Zabbix"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+env_logger = "0.11"
+log = "0.4"
+pcap = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+[profile.release]
+lto = true
+strip = true

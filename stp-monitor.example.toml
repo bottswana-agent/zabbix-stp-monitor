@@ -1,0 +1,45 @@
+# stp-monitor configuration
+
+# Capture interface. Any of:
+#   * the full Npcap device name:  '\Device\NPF_{3F2A...}'
+#   * just the GUID:               '3F2A1B7C-...'
+#   * part of the description:     'Hyper-V Network Adapter #2'
+# Run `stp-monitor --list-interfaces` to see what is available.
+interface = 'Hyper-V Network Adapter #2'
+
+# "pvst" (or "rapid-pvst") = Cisco PVST+ / Rapid-PVST+: monitor the spanning tree of every VLAN.
+# "stp"  (or "rstp"/"mstp") = IEEE STP / RSTP / MSTP: one tree, on the native (untagged) VLAN.
+#        Use "rstp" for UniFi networks.
+mode = "pvst"
+
+# VLAN that untagged IEEE BPDUs are reported under (the trunk's native VLAN).
+native_vlan = 1
+
+# Optional allow list. Omit to report every VLAN that sends BPDUs.
+# vlans = [1, 10, 20, 30]
+
+promiscuous = true
+
+# Window (seconds) for the "TCs in the last N seconds" item that drives the
+# Zabbix topology-change alerts. An alert stays open this long after the last TC.
+tc_window = 300
+
+# TC filtering (see README "Filtering noisy topology changes"):
+# A TC within this many seconds of a change in the advertised tree (root, root path cost,
+# hops to root, designated bridge/port) is "significant"; otherwise it is "minor" -
+# typically an edge device connecting on a switch that doesn't treat the port as edge.
+tc_correlation_window = 30
+# TCs within this many seconds of BPDUs (re)appearing on the trunk are blamed on the
+# monitor's own link coming up and are not alerted.
+tc_local_grace = 20
+
+[zabbix]
+# Zabbix server or proxy. For a Zabbix 7.0 HA cluster list all nodes; data goes to
+# whichever node accepts it, e.g. "zbx1.example.com;zbx2.example.com:10051".
+# Proxy-group redirects (Zabbix 7.0) are followed automatically.
+server = "zabbix.example.com"
+port = 10051
+host = "stp-monitor-hv01"       # Host name in Zabbix (template "STP Monitor" linked)
+interval = 30                   # seconds between full state reports
+lld_interval = 300              # seconds between VLAN discovery refreshes
+timeout = 5
